@@ -1,0 +1,73 @@
+# PecuariaClip Pro — Cloud Build Configuration
+# Builds and deploys the rendering container to Cloud Run Jobs.
+#
+# Usage:
+# gcloud builds submit --config rendering/cloudbuild.yaml rendering/
+#
+# Or set up a trigger in Cloud Build for CI/CD.
+
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/pecuaria-clip-renderer:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/pecuaria-clip-renderer:latest'
+      - '.'
+
+  # Push to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/pecuaria-clip-renderer:$SHORT_SHA'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/pecuaria-clip-renderer:latest'
+
+  # Deploy as Cloud Run Job
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'jobs'
+      - 'create'
+      - 'pecuaria-clip-renderer'
+      - '--image=gcr.io/$PROJECT_ID/pecuaria-clip-renderer:$SHORT_SHA'
+      - '--region=us-central1'
+      - '--memory=4Gi'
+      - '--cpu=2'
+      - '--task-timeout=1800s'     # 30 minutes max
+      - '--max-retries=1'
+      - '--set-env-vars=PROJECT_ID=$PROJECT_ID'
+      - '--quiet'
+    # Use 'replace' on subsequent deploys
+    allowFailure: true
+
+  # Update existing job (if create fails because it already exists)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'jobs'
+      - 'update'
+      - 'pecuaria-clip-renderer'
+      - '--image=gcr.io/$PROJECT_ID/pecuaria-clip-renderer:$SHORT_SHA'
+      - '--region=us-central1'
+      - '--memory=4Gi'
+      - '--cpu=2'
+      - '--task-timeout=1800s'
+      - '--max-retries=1'
+      - '--set-env-vars=PROJECT_ID=$PROJECT_ID'
+      - '--quiet'
+    allowFailure: true
+
+images:
+  - 'gcr.io/$PROJECT_ID/pecuaria-clip-renderer:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/pecuaria-clip-renderer:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
