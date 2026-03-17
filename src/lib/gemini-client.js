@@ -1,15 +1,34 @@
 import { getSceneAnalysisPrompt, getCutRecommendationPrompt } from './prompts/scene-analysis';
 import { TIMELINE_SECTIONS } from '../constants/timeline-sections';
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+let functionsInstance = null;
+let functionsImported = false;
 
 /**
- * Get the Gemini API key from environment.
- * In production, this should go through a Cloud Function proxy.
- * For development, we use the key directly from env.
+ * Get Firebase Functions instance (lazy init) to call Gemini securely via proxy.
  */
-function getApiKey() {
-  return import.meta.env.VITE_GEMINI_API_KEY;
+async function getFunctionsClient() {
+  if (functionsInstance) return functionsInstance;
+  if (functionsImported) return null;
+
+  try {
+    const [{ getFunctions, connectFunctionsEmulator }, { default: app }] = await Promise.all([
+      import('firebase/functions'),
+      import('./firebase.js'),
+    ]);
+
+    functionsInstance = getFunctions(app, 'us-central1');
+
+    if (import.meta.env.DEV && import.meta.env.VITE_USE_EMULATORS === 'true') {
+      connectFunctionsEmulator(functionsInstance, 'localhost', 5001);
+    }
+
+    functionsImported = true;
+    return functionsInstance;
+  } catch {
+    functionsImported = true;
+    return null;
+  }
 }
 
 /**
@@ -20,58 +39,36 @@ function dataUrlToBase64(dataUrl) {
 }
 
 /**
- * Call the Gemini API with images and a text prompt.
+ * Call the Gemini API securely through Cloud Functions proxy.
+ * API key stays server-side — never exposed in the browser.
  */
 async function callGemini(prompt, frameDataUrls) {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error('VITE_GEMINI_API_KEY não configurada. Adicione no arquivo .env.local');
+  const functions = await getFunctionsClient();
+
+  if (!functions) {
+    throw new Error(
+      'Firebase Functions não disponível. Configure o Firebase para usar a IA.'
+    );
   }
 
-  const parts = [
-    { text: prompt },
-    ...frameDataUrls.map(url => ({
-      inlineData: {
-        mimeType: 'image/jpeg',
-        data: dataUrlToBase64(url),
-      },
-    })),
-  ];
-
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.2,
-      },
-    }),
+  const { httpsCallable } = await import('firebase/functions');
+  const geminiProxy = httpsCallable(functions, 'geminiProxy', {
+    timeout: 120_000,
   });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Gemini API error (${response.status}): ${errText}`);
-  }
+  const images = frameDataUrls.map(url => ({
+    mimeType: 'image/jpeg',
+    base64: dataUrlToBase64(url),
+  }));
 
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const response = await geminiProxy({ prompt, images });
+  const result = response.data?.result;
 
-  if (!text) {
+  if (!result) {
     throw new Error('Gemini não retornou resposta válida.');
   }
 
-  try {
-    return JSON.parse(text);
-  } catch {
-    // Try to extract JSON from the response text
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-    throw new Error('Gemini retornou JSON inválido.');
-  }
+  return result;
 }
 
 /**
@@ -104,13 +101,13 @@ export async function getEditRecommendation(sectionId, clipAnalyses) {
     clipsSummary
   );
 
-  // No images needed for the edit recommendation — text-only prompt
+  // Text-only prompt for edit recommendations (no images needed)
   return callGemini(prompt, []);
 }
 
 /**
- * Check if Gemini API key is configured.
+ * Check if Gemini is available (Firebase Functions must be configured).
  */
 export function isGeminiConfigured() {
-  return !!import.meta.env.VITE_GEMINI_API_KEY;
+  return !!import.meta.env.VITE_FIREBASE_API_KEY;
 }

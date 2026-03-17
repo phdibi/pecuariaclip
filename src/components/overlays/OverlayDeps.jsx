@@ -1,6 +1,7 @@
+import { memo } from 'react';
 import { theme } from '../../styles/theme';
 
-export default function OverlayDeps({ data }) {
+function OverlayDeps({ data }) {
   const deps = [
     { label: "Peso Nascimento", value: data.depPN || "+0.8", pct: 35 },
     { label: "Peso Desmama", value: data.depPD || "+18.5", pct: 78 },
@@ -59,3 +60,5 @@ export default function OverlayDeps({ data }) {
     </div>
   );
 }
+
+export default memo(OverlayDeps);

@@ -13,14 +13,61 @@ export function useRender() {
   const [error, setError] = useState(null);
   const [jobId, setJobId] = useState(null);
   const pollRef = useRef(null);
+  const pollErrorCount = useRef(0);
 
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
       if (pollRef.current) {
         clearInterval(pollRef.current);
+        pollRef.current = null;
       }
     };
+  }, []);
+
+  /**
+   * Poll for render status updates with exponential backoff on errors.
+   */
+  const startPolling = useCallback((id) => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+    }
+    pollErrorCount.current = 0;
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const statusData = await pollRenderStatus(id);
+        pollErrorCount.current = 0; // Reset on success
+
+        setProgress(statusData.progress || 0);
+        setProgressMessage(statusData.progressMessage || '');
+
+        if (statusData.status === 'done') {
+          setStatus('done');
+          setOutputUrl(statusData.outputUrl);
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        } else if (statusData.status === 'error') {
+          setStatus('error');
+          setError(statusData.error || 'Erro desconhecido na renderização.');
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        } else {
+          setStatus(statusData.status || 'processing');
+        }
+      } catch (err) {
+        pollErrorCount.current += 1;
+        console.warn(`Polling error (${pollErrorCount.current}):`, err.message);
+
+        // Stop polling after 10 consecutive failures
+        if (pollErrorCount.current >= 10) {
+          setStatus('error');
+          setError('Conexão com o servidor perdida. Tente novamente.');
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }
+    }, 1500);
   }, []);
 
   /**
@@ -52,42 +99,7 @@ export function useRender() {
       setProgress(0);
       setProgressMessage('');
     }
-  }, []);
-
-  /**
-   * Poll for render status updates.
-   */
-  const startPolling = useCallback((id) => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-    }
-
-    pollRef.current = setInterval(async () => {
-      try {
-        const statusData = await pollRenderStatus(id);
-
-        setProgress(statusData.progress || 0);
-        setProgressMessage(statusData.progressMessage || '');
-
-        if (statusData.status === 'done') {
-          setStatus('done');
-          setOutputUrl(statusData.outputUrl);
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-        } else if (statusData.status === 'error') {
-          setStatus('error');
-          setError(statusData.error || 'Erro desconhecido na renderização.');
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-        } else {
-          setStatus(statusData.status || 'processing');
-        }
-      } catch (err) {
-        console.warn('Polling error:', err.message);
-        // Don't stop polling on transient errors
-      }
-    }, 1500); // Poll every 1.5 seconds
-  }, []);
+  }, [startPolling]);
 
   /**
    * Reset the render state.

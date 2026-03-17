@@ -57,6 +57,13 @@ RUN npm ci --production
 # Copy source code
 COPY src/ ./src/
 
+# Create a non-root user for security
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser && \
+    mkdir -p /tmp/render && chown -R appuser:appuser /app /tmp/render
+
+# Run as non-root user
+USER appuser
+
 # Environment variables (set by Cloud Run Job overrides)
 # RENDER_JOB_ID - Firestore document ID for the render job
 # USER_ID - Firebase Auth UID for storage path

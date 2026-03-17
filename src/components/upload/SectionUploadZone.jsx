@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { theme } from '../../styles/theme';
 import { TIMELINE_SECTIONS } from '../../constants/timeline-sections';
@@ -21,7 +21,21 @@ export default function SectionUploadZone({ sectionId }) {
   const [errors, setErrors] = useState([]);
   const [expanded, setExpanded] = useState(false);
 
+  // Track blob URLs for cleanup on unmount
+  const blobUrlsRef = useRef(new Set());
+
   const frameAnalysis = useFrameAnalysis();
+
+  // Cleanup blob URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    const urls = blobUrlsRef.current;
+    return () => {
+      for (const url of urls) {
+        URL.revokeObjectURL(url);
+      }
+      urls.clear();
+    };
+  }, []);
 
   const onDrop = useCallback(async (acceptedFiles) => {
     setErrors([]);
@@ -46,12 +60,14 @@ export default function SectionUploadZone({ sectionId }) {
         try {
           const thumbBlob = await generateThumbnail(file);
           thumbnailUrl = URL.createObjectURL(thumbBlob);
+          blobUrlsRef.current.add(thumbnailUrl);
         } catch {
           // Thumbnail optional
         }
 
         // Store locally (Firebase upload will come when auth is ready)
         const localUrl = URL.createObjectURL(file);
+        blobUrlsRef.current.add(localUrl);
 
         const upload = {
           id: tempId,
@@ -78,6 +94,22 @@ export default function SectionUploadZone({ sectionId }) {
     }
   }, [sectionId, addUpload, frameAnalysis]);
 
+  const handleRemove = useCallback((uploadId) => {
+    const upload = uploads.find(u => u.id === uploadId);
+    if (upload) {
+      // Revoke blob URLs when removing
+      if (upload.localUrl) {
+        URL.revokeObjectURL(upload.localUrl);
+        blobUrlsRef.current.delete(upload.localUrl);
+      }
+      if (upload.thumbnailUrl) {
+        URL.revokeObjectURL(upload.thumbnailUrl);
+        blobUrlsRef.current.delete(upload.thumbnailUrl);
+      }
+    }
+    removeUpload(sectionId, uploadId);
+  }, [uploads, sectionId, removeUpload]);
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'video/*': ['.mp4', '.mov', '.avi', '.webm', '.mts'] },
@@ -96,6 +128,10 @@ export default function SectionUploadZone({ sectionId }) {
       {/* Section header — clickable to expand/collapse */}
       <div
         onClick={() => setExpanded(!expanded)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded); } }}
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           marginBottom: expanded ? '10px' : 0,
@@ -131,6 +167,7 @@ export default function SectionUploadZone({ sectionId }) {
             color: theme.colors.text.dim, fontSize: '12px',
             transform: expanded ? 'rotate(180deg)' : 'rotate(0)',
             transition: 'transform 0.2s',
+            display: 'inline-block',
           }}>
             ▼
           </span>
@@ -162,7 +199,7 @@ export default function SectionUploadZone({ sectionId }) {
                 <VideoThumbnail
                   key={upload.id}
                   upload={upload}
-                  onRemove={(id) => removeUpload(sectionId, id)}
+                  onRemove={handleRemove}
                 />
               ))}
             </div>
@@ -197,7 +234,7 @@ export default function SectionUploadZone({ sectionId }) {
           {errors.map((err, i) => (
             <div key={i} style={{
               fontFamily: theme.fonts.body, fontSize: '11px',
-              color: '#8B0000', padding: '4px 8px',
+              color: theme.colors.red, padding: '4px 8px',
               background: 'rgba(139,0,0,0.1)', borderRadius: '4px',
               marginBottom: '4px',
             }}>

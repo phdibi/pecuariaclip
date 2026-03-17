@@ -1,6 +1,7 @@
+import { memo } from 'react';
 import { theme } from '../../styles/theme';
 
-export default function OverlayDatacard({ data }) {
+function OverlayDatacard({ data }) {
   return (
     <div style={{
       width: "100%", aspectRatio: "16/9",
@@ -75,3 +76,5 @@ export default function OverlayDatacard({ data }) {
     </div>
   );
 }
+
+export default memo(OverlayDatacard);

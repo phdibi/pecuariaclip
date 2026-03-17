@@ -16,7 +16,7 @@ export const geminiProxy = onCall(
   {
     secrets: [geminiApiKey],
     cors: true,
-    enforceAppCheck: false, // Enable in production
+    enforceAppCheck: true,
     maxInstances: 10,
     timeoutSeconds: 120,
     memory: '512MiB',

@@ -51,7 +51,7 @@ export function ToastProvider({ children }) {
           position: 'fixed',
           bottom: '20px',
           right: '20px',
-          zIndex: 10000,
+          zIndex: theme.zIndex.toast,
           display: 'flex',
           flexDirection: 'column',
           gap: '8px',

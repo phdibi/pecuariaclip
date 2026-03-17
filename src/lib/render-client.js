@@ -19,7 +19,7 @@ async function getFunctionsClient() {
   if (functionsImported) return null; // Already tried and failed
 
   try {
-    const [{ getFunctions, connectFunctionsEmulator }, { app }] = await Promise.all([
+    const [{ getFunctions, connectFunctionsEmulator }, { default: app }] = await Promise.all([
       import('firebase/functions'),
       import('./firebase.js'),
     ]);
@@ -101,8 +101,24 @@ export async function pollRenderStatus(jobId) {
 // ===========================
 
 const localJobs = new Map();
+const MAX_LOCAL_JOBS = 10;
+
+/**
+ * Cleanup old completed/errored local jobs to prevent memory leak.
+ */
+function cleanupLocalJobs() {
+  if (localJobs.size <= MAX_LOCAL_JOBS) return;
+  const entries = [...localJobs.entries()];
+  // Remove oldest completed jobs first
+  const completed = entries.filter(([, j]) => j.status === 'done' || j.status === 'error');
+  for (const [id] of completed.slice(0, completed.length - 2)) {
+    localJobs.delete(id);
+  }
+}
 
 function simulateRenderStart(timeline) {
+  cleanupLocalJobs();
+
   const jobId = `local_${Date.now()}`;
   const totalClips = timeline.reduce((sum, t) => sum + (t.clips?.length || 0), 0);
 
@@ -141,7 +157,7 @@ async function simulateProgress(jobId, totalClips) {
   for (const stage of stages) {
     await new Promise(r => setTimeout(r, stage.delay));
     const current = localJobs.get(jobId);
-    if (!current) return;
+    if (!current) return; // Job was cleaned up
     localJobs.set(jobId, {
       ...current,
       ...stage,

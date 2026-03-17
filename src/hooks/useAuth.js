@@ -94,5 +94,7 @@ export function useAuth() {
     isAuthenticated: !!user,
     // When Firebase is not configured, allow usage without auth
     isFirebaseConfigured: !!import.meta.env.VITE_FIREBASE_API_KEY,
+    // Allow access to auth instance for downstream checks
+    isReady: !loading,
   };
 }

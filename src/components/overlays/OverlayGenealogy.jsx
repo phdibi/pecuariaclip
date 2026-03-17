@@ -1,6 +1,7 @@
+import { memo } from 'react';
 import { theme } from '../../styles/theme';
 
-export default function OverlayGenealogy({ data }) {
+function OverlayGenealogy({ data }) {
   return (
     <div style={{
       width: "100%", aspectRatio: "16/9", background: "#0A0805",
@@ -92,3 +93,5 @@ export default function OverlayGenealogy({ data }) {
     </div>
   );
 }
+
+export default memo(OverlayGenealogy);

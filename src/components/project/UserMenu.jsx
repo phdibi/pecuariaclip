@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { theme } from '../../styles/theme';
 
 /**
@@ -7,6 +7,17 @@ import { theme } from '../../styles/theme';
  */
 export default function UserMenu({ user, onLogout }) {
   const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open]);
 
   if (!user) return null;
 
@@ -15,6 +26,9 @@ export default function UserMenu({ user, onLogout }) {
       {/* Avatar button */}
       <button
         onClick={() => setOpen(!open)}
+        aria-label="Menu do usuário"
+        aria-expanded={open}
+        aria-haspopup="true"
         style={{
           width: '32px',
           height: '32px',
@@ -49,10 +63,11 @@ export default function UserMenu({ user, onLogout }) {
           {/* Backdrop */}
           <div
             onClick={() => setOpen(false)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
             style={{
               position: 'fixed',
               inset: 0,
-              zIndex: 999,
+              zIndex: theme.zIndex.dropdown,
             }}
           />
 
@@ -65,7 +80,7 @@ export default function UserMenu({ user, onLogout }) {
             border: `1px solid ${theme.colors.border.primary}`,
             borderRadius: '8px',
             padding: '12px',
-            zIndex: 1000,
+            zIndex: theme.zIndex.dropdown + 1,
             boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
           }}>
             <div style={{

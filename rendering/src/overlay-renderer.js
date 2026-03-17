@@ -78,9 +78,12 @@ export async function renderOverlays(overlaySettings, animalData, timeline, reso
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
+        '--hide-scrollbars',
+        '--disable-extensions',
       ],
     });
 
+    // Reuse a single page for all overlays (avoids creating new browser per type)
     const page = await browser.newPage();
     await page.setViewport({ width, height });
 
@@ -91,10 +94,11 @@ export async function renderOverlays(overlaySettings, animalData, timeline, reso
         const html = generateOverlayHtml(overlayType, animalData, width, height);
         await page.setContent(html, { waitUntil: 'networkidle0' });
 
-        // Wait for fonts to load
-        await page.evaluate(() =>
-          document.fonts.ready
-        );
+        // Wait for fonts to load with a timeout
+        await Promise.race([
+          page.evaluate(() => document.fonts.ready),
+          new Promise(resolve => setTimeout(resolve, 5000)),
+        ]);
 
         // Take screenshot with transparent background
         await page.screenshot({
@@ -102,6 +106,9 @@ export async function renderOverlays(overlaySettings, animalData, timeline, reso
           omitBackground: true, // Transparent background
           type: 'png',
         });
+
+        // Verify file was created
+        await fs.access(pngPath);
 
         // Map all sections that use this overlay to the same PNG
         for (const sectionId of sectionIds) {

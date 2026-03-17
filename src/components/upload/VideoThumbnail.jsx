@@ -1,7 +1,8 @@
+import { memo } from 'react';
 import { theme } from '../../styles/theme';
 import { formatDuration, formatFileSize } from '../../lib/video-utils';
 
-export default function VideoThumbnail({ upload, onRemove }) {
+function VideoThumbnail({ upload, onRemove }) {
   return (
     <div style={{
       background: theme.colors.bg.tertiary,
@@ -85,3 +86,5 @@ export default function VideoThumbnail({ upload, onRemove }) {
     </div>
   );
 }
+
+export default memo(VideoThumbnail);

@@ -34,16 +34,19 @@ export default function ProjectStatusBar() {
   const currentIndex = STEPS.findIndex(s => s.id === currentStep);
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0',
-      padding: '8px 16px',
-      background: theme.colors.bg.secondary,
-      border: `1px solid ${theme.colors.border.primary}`,
-      borderRadius: '8px',
-      overflow: 'hidden',
-    }}>
+    <nav
+      aria-label="Progresso do projeto"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0',
+        padding: '8px 16px',
+        background: theme.colors.bg.secondary,
+        border: `1px solid ${theme.colors.border.primary}`,
+        borderRadius: '8px',
+        overflow: 'hidden',
+      }}
+    >
       {STEPS.map((step, i) => {
         const isActive = i === currentIndex;
         const isCompleted = i < currentIndex;
@@ -52,16 +55,19 @@ export default function ProjectStatusBar() {
         return (
           <div key={step.id} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
             {/* Step indicator */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              background: isActive ? theme.colors.gold.subtle : 'transparent',
-              transition: 'all 0.3s',
-            }}>
-              <span style={{ fontSize: '12px' }}>
+            <div
+              aria-current={isActive ? 'step' : undefined}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                background: isActive ? theme.colors.gold.subtle : 'transparent',
+                transition: 'all 0.3s',
+              }}
+            >
+              <span style={{ fontSize: '12px' }} aria-hidden="true">
                 {isCompleted ? '✓' : step.icon}
               </span>
               <span style={{
@@ -95,6 +101,6 @@ export default function ProjectStatusBar() {
           </div>
         );
       })}
-    </div>
+    </nav>
   );
 }

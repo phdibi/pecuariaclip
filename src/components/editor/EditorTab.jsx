@@ -63,24 +63,10 @@ export default function EditorTab() {
   const handleBuildWithAi = useCallback(async () => {
     if (sectionsWithUploads.length === 0) return;
 
-    // For each section with uploads, get the best frame data URLs
-    const clips = [];
-    for (const sectionId of sectionsWithUploads) {
-      const sectionUploads = sections[sectionId]?.uploads || [];
-      // Use thumbnails as proxy frames for AI analysis
-      // In full version, these would come from the frame analysis
-      const bestFrameDataUrls = sectionUploads
-        .filter(u => u.thumbnailUrl)
-        .map(u => u.thumbnailUrl)
-        .slice(0, 5);
+    // Collect edit plans in a local variable (not React state)
+    // because setState is async and won't be available within this execution.
+    const collectedPlans = {};
 
-      if (bestFrameDataUrls.length > 0) {
-        clips.push({ clipIndex: 0, bestFrameDataUrls });
-      }
-    }
-
-    // Run AI analysis on the first section with uploads (demo)
-    // In full version, this loops through all sections
     for (const sectionId of sectionsWithUploads) {
       const sectionUploads = sections[sectionId]?.uploads || [];
       const sectionClips = sectionUploads.map((upload, idx) => ({
@@ -92,7 +78,7 @@ export default function EditorTab() {
         try {
           const result = await aiAnalysis.analyzeSection(sectionId, sectionClips);
           if (result?.editPlan) {
-            setAiEditPlans(prev => ({ ...prev, [sectionId]: result.editPlan }));
+            collectedPlans[sectionId] = result.editPlan;
           }
         } catch {
           // If AI fails for a section, fall through to simple mode for it
@@ -100,12 +86,20 @@ export default function EditorTab() {
       }
     }
 
-    // Build timeline from AI plans (falls back to simple for sections without AI)
-    const tl = Object.keys(aiEditPlans).length > 0
-      ? buildTimelineFromAi(aiEditPlans, sections)
-      : buildSimpleTimeline(sections);
-    setTimeline(tl);
-  }, [sections, sectionsWithUploads, aiAnalysis, aiEditPlans]);
+    // Sync local plans to React state for persistence
+    setAiEditPlans(prev => ({ ...prev, ...collectedPlans }));
+
+    // Build timeline from collected plans (uses local var, not stale state)
+    if (Object.keys(collectedPlans).length > 0) {
+      const { timeline: tl, warnings } = buildTimelineFromAi(collectedPlans, sections);
+      if (warnings.length > 0) {
+        console.warn('Timeline warnings:', warnings);
+      }
+      setTimeline(tl);
+    } else {
+      setTimeline(buildSimpleTimeline(sections));
+    }
+  }, [sections, sectionsWithUploads, aiAnalysis]);
 
   // Trigger real render (Cloud Functions + Cloud Run Job, with local fallback)
   const handleRender = useCallback(() => {
@@ -231,7 +225,7 @@ export default function EditorTab() {
                 fontFamily: theme.fonts.body, fontSize: '10px',
                 color: theme.colors.text.dim,
               }}>
-                Configure VITE_GEMINI_API_KEY no .env.local para usar IA
+                Configure o Firebase e deploy das Cloud Functions para usar IA
               </span>
             )}
 

@@ -1,12 +1,15 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, memo } from 'react';
 import { theme } from '../../styles/theme';
 import { formatDuration } from '../../lib/video-utils';
 
-export default function PlaybackPreview({ flatClips, overlayComponent }) {
+function PlaybackPreview({ flatClips, overlayComponent }) {
   const videoRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [currentClipIndex, setCurrentClipIndex] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
+  // Use ref for high-frequency time updates (avoids 60fps re-renders)
+  const currentTimeRef = useRef(0);
+  const [displayTime, setDisplayTime] = useState(0);
+  const rafRef = useRef(null);
   const [totalDuration, setTotalDuration] = useState(0);
 
   const currentClip = flatClips?.[currentClipIndex];
@@ -29,13 +32,22 @@ export default function PlaybackPreview({ flatClips, overlayComponent }) {
     video.currentTime = currentClip.inPoint;
   }, [currentClip]);
 
+  // Throttled display time update (4fps instead of 60fps)
+  useEffect(() => {
+    if (!playing) return;
+    const interval = setInterval(() => {
+      setDisplayTime(currentTimeRef.current);
+    }, 250);
+    return () => clearInterval(interval);
+  }, [playing]);
+
   // Monitor playback to respect out-point
   const onTimeUpdate = useCallback(() => {
     if (!currentClip || !videoRef.current) return;
     const video = videoRef.current;
 
     const clipTime = video.currentTime - currentClip.inPoint;
-    setCurrentTime(currentClip.startInTimeline + clipTime);
+    currentTimeRef.current = currentClip.startInTimeline + clipTime;
 
     if (video.currentTime >= currentClip.outPoint) {
       // Move to next clip
@@ -46,7 +58,8 @@ export default function PlaybackPreview({ flatClips, overlayComponent }) {
         video.pause();
         setPlaying(false);
         setCurrentClipIndex(0);
-        setCurrentTime(0);
+        currentTimeRef.current = 0;
+        setDisplayTime(0);
       }
     }
   }, [currentClip, currentClipIndex, flatClips]);
@@ -57,6 +70,7 @@ export default function PlaybackPreview({ flatClips, overlayComponent }) {
     if (playing) {
       videoRef.current.pause();
       setPlaying(false);
+      setDisplayTime(currentTimeRef.current);
     } else {
       videoRef.current.play().then(() => setPlaying(true)).catch(() => {});
     }
@@ -66,7 +80,8 @@ export default function PlaybackPreview({ flatClips, overlayComponent }) {
     setCurrentClipIndex(clipIndex);
     setPlaying(false);
     if (flatClips[clipIndex]) {
-      setCurrentTime(flatClips[clipIndex].startInTimeline);
+      currentTimeRef.current = flatClips[clipIndex].startInTimeline;
+      setDisplayTime(flatClips[clipIndex].startInTimeline);
     }
   }, [flatClips]);
 
@@ -89,6 +104,8 @@ export default function PlaybackPreview({ flatClips, overlayComponent }) {
       </div>
     );
   }
+
+  const progressPct = totalDuration > 0 ? (displayTime / totalDuration) * 100 : 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -139,6 +156,7 @@ export default function PlaybackPreview({ flatClips, overlayComponent }) {
       }}>
         <button
           onClick={togglePlay}
+          aria-label={playing ? 'Pausar' : 'Reproduzir'}
           style={{
             width: '32px', height: '32px', borderRadius: '50%',
             background: theme.colors.gold.primary, border: 'none',
@@ -154,7 +172,7 @@ export default function PlaybackPreview({ flatClips, overlayComponent }) {
           fontFamily: theme.fonts.heading, fontSize: '14px',
           color: theme.colors.text.primary, letterSpacing: '1px',
         }}>
-          {formatDuration(currentTime)}
+          {formatDuration(displayTime)}
         </div>
         <div style={{
           fontFamily: theme.fonts.body, fontSize: '10px',
@@ -164,15 +182,21 @@ export default function PlaybackPreview({ flatClips, overlayComponent }) {
         </div>
 
         {/* Progress bar */}
-        <div style={{
-          flex: 1, height: '6px',
-          background: theme.colors.border.subtle,
-          borderRadius: '3px', overflow: 'hidden',
-          cursor: 'pointer',
-        }}>
+        <div
+          role="progressbar"
+          aria-valuenow={Math.round(progressPct)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          style={{
+            flex: 1, height: '6px',
+            background: theme.colors.border.subtle,
+            borderRadius: '3px', overflow: 'hidden',
+            cursor: 'pointer',
+          }}
+        >
           <div style={{
             height: '100%', borderRadius: '3px',
-            width: totalDuration > 0 ? `${(currentTime / totalDuration) * 100}%` : '0%',
+            width: `${progressPct}%`,
             background: `linear-gradient(90deg, ${theme.colors.gold.dark}, ${theme.colors.gold.primary})`,
             transition: 'width 0.1s',
           }} />
@@ -196,6 +220,10 @@ export default function PlaybackPreview({ flatClips, overlayComponent }) {
           <div
             key={clip.id}
             onClick={() => seek(i)}
+            role="button"
+            tabIndex={0}
+            aria-label={`Clip ${i + 1}: ${clip.uploadFileName}`}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); seek(i); } }}
             style={{
               flexShrink: 0, width: '50px', height: '30px',
               borderRadius: '3px', overflow: 'hidden', cursor: 'pointer',
@@ -206,7 +234,7 @@ export default function PlaybackPreview({ flatClips, overlayComponent }) {
             }}
           >
             {clip.thumbnailUrl ? (
-              <img src={clip.thumbnailUrl} alt="" style={{
+              <img src={clip.thumbnailUrl} alt={`Clip ${i + 1}`} style={{
                 width: '100%', height: '100%', objectFit: 'cover',
               }} />
             ) : (
@@ -221,3 +249,5 @@ export default function PlaybackPreview({ flatClips, overlayComponent }) {
     </div>
   );
 }
+
+export default memo(PlaybackPreview);

@@ -4,7 +4,7 @@ import { TIMELINE_SECTIONS } from '../constants/timeline-sections';
  * Parse a duration string like "3-5s" into { min, max } seconds.
  */
 function parseDuration(str) {
-  const match = str.match(/(\d+)-?(\d+)?s/);
+  const match = str.match(/(\d+)-?(\d+)?s?/);
   if (!match) return { min: 5, max: 10 };
   return {
     min: parseInt(match[1]),
@@ -29,11 +29,15 @@ export function createEmptyTimeline() {
 
 /**
  * Build a timeline from AI edit plan and upload data.
+ * Warns about skipped clips instead of silently dropping them.
+ *
  * @param {object} editPlans - Map of sectionId -> { edit_plan: [...] }
  * @param {object} sections - From project store (sectionId -> { uploads })
+ * @returns {{ timeline: Array, warnings: string[] }}
  */
 export function buildTimelineFromAi(editPlans, sections) {
   const timeline = createEmptyTimeline();
+  const warnings = [];
 
   for (const track of timeline) {
     const plan = editPlans[track.sectionId];
@@ -41,31 +45,49 @@ export function buildTimelineFromAi(editPlans, sections) {
 
     if (!plan?.edit_plan || sectionUploads.length === 0) continue;
 
-    track.clips = plan.edit_plan.map((item, idx) => {
+    track.clips = [];
+    for (let idx = 0; idx < plan.edit_plan.length; idx++) {
+      const item = plan.edit_plan[idx];
       const upload = sectionUploads[item.clip_index] || sectionUploads[0];
-      if (!upload) return null;
+
+      if (!upload) {
+        warnings.push(
+          `Seção "${track.label}": clip ${idx} ignorado (upload index ${item.clip_index} não encontrado)`
+        );
+        continue;
+      }
 
       const duration = item.out_time - item.in_time;
+      if (duration <= 0) {
+        warnings.push(
+          `Seção "${track.label}": clip ${idx} ignorado (duração inválida: ${item.in_time}-${item.out_time})`
+        );
+        continue;
+      }
 
-      return {
+      track.clips.push({
         id: `${track.sectionId}_clip_${idx}`,
         uploadId: upload.id,
         uploadFileName: upload.fileName,
         localUrl: upload.localUrl,
         thumbnailUrl: upload.thumbnailUrl,
-        inPoint: item.in_time,
+        inPoint: Math.max(0, item.in_time),
         outPoint: item.out_time,
         duration: Math.max(0.5, duration),
         transition: item.transition_to_next || 'cut',
         reason: item.reason || '',
         aiScore: 0,
-      };
-    }).filter(Boolean);
+      });
+    }
 
     track.totalDuration = track.clips.reduce((sum, c) => sum + c.duration, 0);
   }
 
-  return timeline;
+  if (warnings.length > 0) {
+    console.warn('[Timeline] Clips ignorados:', warnings);
+  }
+
+  return { timeline, warnings };
 }
 
 /**
@@ -79,10 +101,10 @@ export function buildSimpleTimeline(sections) {
     const sectionUploads = sections[track.sectionId]?.uploads || [];
     if (sectionUploads.length === 0) continue;
 
-    // Use first upload, trim to target max duration
     const upload = sectionUploads[0];
     const maxDur = track.targetDuration.max;
-    const clipDuration = Math.min(upload.duration || maxDur, maxDur);
+    const uploadDuration = upload.duration || maxDur;
+    const clipDuration = Math.min(uploadDuration, maxDur);
 
     track.clips = [{
       id: `${track.sectionId}_clip_0`,

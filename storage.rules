@@ -3,7 +3,20 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     match /projects/{userId}/{projectId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      allow write: if request.auth != null
+        && request.auth.uid == userId
+        // Max 2GB per file
+        && request.resource.size < 2 * 1024 * 1024 * 1024
+        // Only video files
+        && request.resource.contentType.matches('video/.*');
+    }
+
+    // Rendered output: readable by owner, writable only by server (admin SDK)
+    match /renders/{userId}/{allPaths=**} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
     }
   }
 }
